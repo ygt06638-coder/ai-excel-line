@@ -52,21 +52,19 @@
       <h2>تعليمات المعالجة</h2>
     </div>
 
-    <div class="field-row">
-      <div class="field">
-        <label>العمود المصدر (اللي هياخد منه المعلومة)</label>
-        <select id="sourceColumn"></select>
-      </div>
-      <div class="field">
-        <label>العمود الهدف (اللي هيتكتب فيه الناتج)</label>
-        <select id="targetColumn"></select>
-      </div>
+    <div class="field">
+      <label>هياخد المعلومة من أي أعمدة؟ (تقدر تختار أكتر من عمود)</label>
+      <div class="checkbox-grid" id="sourceColumnsGrid"></div>
     </div>
 
     <div class="field">
-      <label>قول للذكاء الاصطناعي عايزه يعمل ايه بالظبط</label>
-      <textarea id="instruction" rows="3" maxlength="1000" placeholder="مثال: اكتب عنوان سيو جذاب للمنتج ده يتضمن كلمات بحث مهمة، بحد أقصى ٦٠ حرف"></textarea>
+      <label>هيتكتب الناتج في أي أعمدة؟ (ضيف كذا عمود هدف، كل واحد بتعليماته الخاصة)</label>
+      <div class="targets-list" id="targetsList"></div>
+      <button type="button" id="addTargetBtn" class="btn-secondary">+ ضيف عمود هدف</button>
+      <p class="field-hint">اكتب اسم عمود موجود عشان تعدّل عليه، أو اسم جديد عشان يتضاف كعمود جديد في الملف النهائي.</p>
     </div>
+
+    <datalist id="headersList"></datalist>
 
     <button id="startBtn" class="btn-primary">ابدأ التشغيل</button>
     <p class="eta-note" id="etaNote"></p>

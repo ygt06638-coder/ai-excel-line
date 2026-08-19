@@ -7,9 +7,10 @@ const fileName = document.getElementById('fileName');
 const rowCountEl = document.getElementById('rowCount');
 
 const stationConfig = document.getElementById('station-config');
-const sourceColumn = document.getElementById('sourceColumn');
-const targetColumn = document.getElementById('targetColumn');
-const instruction = document.getElementById('instruction');
+const sourceColumnsGrid = document.getElementById('sourceColumnsGrid');
+const targetsList = document.getElementById('targetsList');
+const addTargetBtn = document.getElementById('addTargetBtn');
+const headersListEl = document.getElementById('headersList');
 const startBtn = document.getElementById('startBtn');
 const etaNote = document.getElementById('etaNote');
 
@@ -28,6 +29,8 @@ const logoutBtn = document.getElementById('logoutBtn');
 let currentJobId = null;
 let currentRowCount = 0;
 let currentSheetName = 'Sheet1';
+let currentHeaders = [];
+const MAX_TARGETS = 6;
 
 function getToken() {
   return localStorage.getItem('app_token') || '';
@@ -141,19 +144,115 @@ async function handleFile(file) {
 }
 
 function populateColumns(headers) {
-  sourceColumn.innerHTML = '';
-  targetColumn.innerHTML = '';
-  headers.forEach(h => {
-    sourceColumn.appendChild(new Option(h, h));
-    targetColumn.appendChild(new Option(h, h));
+  currentHeaders = headers;
+
+  sourceColumnsGrid.innerHTML = '';
+  headers.forEach((h, idx) => {
+    const label = document.createElement('label');
+    label.className = 'checkbox-item';
+
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.value = h;
+    input.checked = idx === 0; // اختار أول عمود افتراضياً عشان المستخدم ميبتديش من فاضي
+
+    const span = document.createElement('span');
+    span.textContent = h;
+
+    input.addEventListener('change', () => {
+      label.classList.toggle('is-checked', input.checked);
+    });
+    if (input.checked) label.classList.add('is-checked');
+
+    label.appendChild(input);
+    label.appendChild(span);
+    sourceColumnsGrid.appendChild(label);
   });
+
+  headersListEl.innerHTML = '';
+  headers.forEach(h => headersListEl.appendChild(new Option(h, h)));
+
+  targetsList.innerHTML = '';
+  addTargetRow();
+  updateAddTargetBtnState();
+}
+
+function addTargetRow() {
+  if (targetsList.children.length >= MAX_TARGETS) return;
+
+  const row = document.createElement('div');
+  row.className = 'target-row';
+
+  const head = document.createElement('div');
+  head.className = 'target-row-head';
+
+  const colInput = document.createElement('input');
+  colInput.type = 'text';
+  colInput.className = 'target-column-input';
+  colInput.setAttribute('list', 'headersList');
+  colInput.placeholder = 'اسم العمود (موجود أو جديد)';
+
+  const removeBtn = document.createElement('button');
+  removeBtn.type = 'button';
+  removeBtn.className = 'remove-target-btn';
+  removeBtn.textContent = '✕';
+  removeBtn.title = 'احذف عمود الهدف ده';
+  removeBtn.addEventListener('click', () => {
+    if (targetsList.children.length <= 1) return; // سيب عمود هدف واحد على الأقل
+    row.remove();
+    updateAddTargetBtnState();
+  });
+
+  head.appendChild(colInput);
+  head.appendChild(removeBtn);
+
+  const instrInput = document.createElement('textarea');
+  instrInput.className = 'target-instruction-input';
+  instrInput.rows = 2;
+  instrInput.maxLength = 1000;
+  instrInput.placeholder = 'قول للذكاء الاصطناعي عايزه يكتب ايه في العمود ده بالظبط';
+
+  row.appendChild(head);
+  row.appendChild(instrInput);
+  targetsList.appendChild(row);
+  updateAddTargetBtnState();
+}
+
+function updateAddTargetBtnState() {
+  addTargetBtn.disabled = targetsList.children.length >= MAX_TARGETS;
+}
+
+addTargetBtn.addEventListener('click', () => addTargetRow());
+
+function collectSourceColumns() {
+  return Array.from(sourceColumnsGrid.querySelectorAll('input[type="checkbox"]:checked')).map(el => el.value);
+}
+
+function collectTargets() {
+  return Array.from(targetsList.children).map(row => ({
+    column: row.querySelector('.target-column-input').value.trim(),
+    instruction: row.querySelector('.target-instruction-input').value.trim(),
+  }));
 }
 
 // ---------- بدء المعالجة ----------
 startBtn.addEventListener('click', async () => {
   clearError();
-  if (!instruction.value.trim()) {
-    showError('اكتب تعليمات للذكاء الاصطناعي الأول');
+
+  const sourceColumns = collectSourceColumns();
+  if (sourceColumns.length === 0) {
+    showError('اختار عمود مصدر واحد على الأقل');
+    return;
+  }
+
+  const targets = collectTargets();
+  if (targets.some(t => !t.column || !t.instruction)) {
+    showError('كل عمود هدف لازم يكون له اسم وتعليمات');
+    return;
+  }
+  const targetCols = targets.map(t => t.column);
+  if (new Set(targetCols).size !== targetCols.length) {
+    showError('في عمود هدف مكرر أكتر من مرة، خليه اسم مختلف');
     return;
   }
 
@@ -166,9 +265,8 @@ startBtn.addEventListener('click', async () => {
       method: 'POST',
       body: JSON.stringify({
         jobId: currentJobId,
-        sourceColumn: sourceColumn.value,
-        targetColumn: targetColumn.value,
-        instruction: instruction.value.trim(),
+        sourceColumns,
+        targets,
       }),
     });
 
