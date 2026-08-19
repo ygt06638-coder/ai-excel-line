@@ -432,6 +432,21 @@ textarea::placeholder,
   padding-inline-start: 12px;
 }
 
+.quota-pause {
+  margin-top: 16px;
+  background: #e8a33d0f;
+  border: 1px solid var(--amber-dim);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+}
+
+.quota-pause-text {
+  color: var(--text);
+  font-size: 14px;
+  margin: 0 0 12px;
+  line-height: 1.7;
+}
+
 /* ---------- Done ---------- */
 .done-text {
   color: var(--text-dim);

@@ -19,6 +19,9 @@ const beltFill = document.getElementById('beltFill');
 const progressCount = document.getElementById('progressCount');
 const progressPct = document.getElementById('progressPct');
 const beltStatus = document.getElementById('beltStatus');
+const quotaPause = document.getElementById('quotaPause');
+const quotaPauseText = document.getElementById('quotaPauseText');
+const resumeBtn = document.getElementById('resumeBtn');
 
 const stationDone = document.getElementById('station-done');
 const downloadBtn = document.getElementById('downloadBtn');
@@ -271,6 +274,7 @@ startBtn.addEventListener('click', async () => {
     });
 
     stationBelt.hidden = false;
+    quotaPause.hidden = true;
     stationBelt.scrollIntoView({ behavior: 'smooth', block: 'start' });
     pollStep();
   } catch (err) {
@@ -292,6 +296,13 @@ async function pollStep() {
     progressCount.textContent = `${toArabicDigits(data.processed)} / ${toArabicDigits(data.total)}`;
     progressPct.textContent = `٪${toArabicDigits(pct)}`;
 
+    if (data.paused) {
+      beltStatus.textContent = 'الأداة واقفة مؤقتاً بسبب حد استخدام Gemini';
+      quotaPauseText.textContent = data.message || 'وصلت لحد الطلبات المسموح بيه دلوقتي.';
+      quotaPause.hidden = false;
+      return; // وقّف الـ polling التلقائي، المستخدم هيكمل بنفسه من الزرار
+    }
+
     if (data.status === 'error') {
       showError('حصل خطأ أثناء المعالجة: ' + data.error);
       startBtn.disabled = false;
@@ -300,6 +311,7 @@ async function pollStep() {
 
     if (data.status === 'done') {
       beltStatus.textContent = 'تمام، خلصنا كل الصفوف';
+      quotaPause.hidden = true;
       stationDone.hidden = false;
       stationDone.scrollIntoView({ behavior: 'smooth', block: 'start' });
       return;
@@ -316,6 +328,11 @@ async function pollStep() {
     startBtn.disabled = false;
   }
 }
+
+resumeBtn.addEventListener('click', () => {
+  quotaPause.hidden = true;
+  pollStep();
+});
 
 // ---------- تحميل الملف النهائي ----------
 downloadBtn.addEventListener('click', async () => {
