@@ -1,0 +1,160 @@
+# خط الإنتاج — نسخة GitHub Pages + Supabase (بدون Terminal خالص)
+
+كل الخطوات هنا بتتعمل من المتصفح بس: من لوحة تحكم Supabase ومن موقع GitHub. مفيش
+أي أمر Terminal أو تثبيت أي برنامج على جهازك.
+
+## هيكل المشروع
+
+```
+project-root/
+├── docs/                      ← ده اللي GitHub Pages هيعرضه
+│   ├── index.html
+│   ├── login.html
+│   ├── script.js
+│   ├── style.css
+│   └── config.js              ← هنا بتحط رابط مشروع Supabase بتاعك
+└── supabase/
+    ├── migrations/
+    │   └── 0001_init.sql       ← تلزقه في SQL Editor
+    └── functions/
+        ├── login/index.ts
+        ├── logout/index.ts
+        ├── auth-status/index.ts
+        ├── upload/index.ts
+        ├── start-process/index.ts
+        ├── process-step/index.ts
+        └── download/index.ts
+```
+
+كل ملف `index.ts` جوه `functions/` بقى **مستقل بذاته بالكامل** (مفيش ملفات مشتركة
+بينهم) عشان تقدر تنسخه وتلزقه في محرر Supabase من المتصفح من غير ما تحتاج CLI.
+
+---
+
+## 1) اعمل مشروع Supabase
+
+1. روح [supabase.com](https://supabase.com) وسجل دخول (تقدر تدخل بحساب GitHub).
+2. **New Project** → اختار اسم، كلمة سر لقاعدة البيانات (احفظها)، وأقرب منطقة ليك.
+3. استنى دقيقة لحد ما يخلص التجهيز.
+4. من القائمة الجانبية: **Project Settings → API** → انسخ **Project URL**
+   (شكله `https://xxxxxxxxxxxx.supabase.co`) واحفظه، هتحتاجه بعدين.
+
+## 2) جهّز قاعدة البيانات
+
+1. من القائمة الجانبية روح **SQL Editor** → **New query**.
+2. افتح ملف `supabase/migrations/0001_init.sql` من المشروع اللي بعتهولك (بأي
+   محرر نصوص أو حتى بمفكرة عادية)، وانسخ كل محتواه.
+3. الصق الكود في الـ SQL Editor ودوس **Run**.
+4. هيتعمل جدولين: `jobs` و `sessions` — تقدر تتأكد منهم من **Table Editor**.
+
+## 3) حط المفاتيح السرية (Secrets)
+
+1. من القائمة الجانبية روح **Edge Functions**.
+2. دوس على تبويب **Secrets** (أو من **Project Settings → Edge Functions**).
+3. ضيف المفاتيح دي واحد واحد (اسم ← قيمة):
+
+   | الاسم | القيمة |
+   |---|---|
+   | `GEMINI_API_KEY` | مفتاحك من https://aistudio.google.com/apikey (مجاني) |
+   | `APP_PASSWORD` | كلمة السر اللي هتدخل بيها الموقع |
+   | `GEMINI_MODEL` | `gemini-2.5-flash-lite` |
+   | `MIN_DELAY_MS` | `4200` |
+   | `MAX_ROWS` | `1000` |
+
+   > لو سيّبت `APP_PASSWORD` فاضية، الموقع هيفضل مفتوح لأي حد بدون تسجيل دخول.
+
+## 4) انشر الـ Edge Functions من المتصفح
+
+هتكرر الخطوات دي **٧ مرات**، مرة لكل فنكشن (`login`, `logout`, `auth-status`,
+`upload`, `start-process`, `process-step`, `download`):
+
+1. من **Edge Functions** دوس **Deploy a new function** (أو **Create function**).
+2. اختار **Via Editor** / **Create from scratch** (مش "Import from template").
+3. في خانة الاسم اكتب اسم الفنكشن **بالظبط** زي اسم المجلد (مثلاً `login`).
+4. **مهم جداً:** لو فيه خيار **Enforce JWT Verification** أو **Verify JWT**،
+   اعمله **إيقاف (Off)** — لأننا عملنا نظام حماية بسيط بكلمة سر بدل نظام
+   Supabase Auth الكامل.
+5. امسح أي كود موجود في المحرر بشكل افتراضي، وافتح الملف المناظر من
+   `supabase/functions/<اسم-الفنكشن>/index.ts` عندك، وانسخ كل محتواه، والصقه
+   في المحرر.
+6. دوس **Deploy function**.
+7. كرر نفس الخطوات للفنكشن اللي بعده لحد ما تخلص السبعة كلهم.
+
+بعد ما تخلص، لازم تلاقي ٧ فنكشنز ظاهرين في صفحة **Edge Functions** كلهم بحالة
+**Active**.
+
+## 5) اربط الفرونت إند بمشروعك
+
+1. افتح ملف `docs/config.js` بأي محرر نصوص على جهازك.
+2. غيّر السطر:
+   ```js
+   SUPABASE_FUNCTIONS_URL: 'https://YOUR-PROJECT-REF.supabase.co/functions/v1',
+   ```
+   بحيث يبقى رابط مشروعك اللي نسخته في الخطوة ١ زائد `/functions/v1` في الآخر.
+3. احفظ الملف.
+
+## 6) اعمل ريبو على GitHub وارفع الملفات (بالسحب والإفلات)
+
+1. روح [github.com](https://github.com) → **New repository** → حط اسم →
+   **Create repository** (سيبه فاضي، من غير README).
+2. في صفحة الريبو الفاضية، دوس **uploading an existing file**.
+3. من جهازك، افتح المجلد اللي فكيته من ملف الزيب، واسحب **مجلد `docs` كامل**
+   ومجلد **`supabase` كامل** وأفلتهم في صفحة الرفع بتاعة GitHub (المتصفحات
+   الحديثة بتحافظ على شكل المجلدات لو سحبتهم من الجهاز مباشرة).
+4. استنى لحد ما الرفع يخلص (شريط تقدم تحت)، بعدين اكتب رسالة زي "نشر أولي"
+   ودوس **Commit changes**.
+
+## 7) فعّل GitHub Pages
+
+1. في صفحة الريبو: **Settings → Pages** (في القائمة الجانبية على الشمال).
+2. تحت **Build and deployment → Source** اختار **Deploy from a branch**.
+3. **Branch:** اختار `main` — **Folder:** اختار `/docs` — دوس **Save**.
+4. استنى دقيقة أو اتنين، هيظهرلك في نفس الصفحة رابط زي:
+   `https://username.github.io/repo-name/`
+
+## 8) جرب الموقع
+
+1. افتح الرابط — لو حطيت `APP_PASSWORD` هيحولك لصفحة تسجيل دخول.
+2. سجل دخول بكلمة السر.
+3. جرب ترفع ملف إكسيل صغير (٥-١٠ صفوف) وتأكد إن الأعمدة ظهرت صح.
+4. اختار عمود مصدر وهدف، اكتب تعليمات، ابدأ التشغيل، وتابع الشريط لحد ما يخلص.
+5. نزّل الملف النهائي.
+
+---
+
+## لو حصل خطأ
+
+- **خطأ 401 "لازم تسجل دخول"**: يبقى غالباً نسيت توقف **Enforce JWT
+  Verification** لفنكشن معين، أو التوكن مش بيتبعت. راجع خطوة ٤.
+- **خطأ CORS في الـ Console**: تأكد إن رابط `SUPABASE_FUNCTIONS_URL` في
+  `config.js` مكتوب صح ومنتهي بـ `/functions/v1` من غير `/` زيادة في الآخر.
+- **الفنكشن مش شغال / بيرجع خطأ 500**: من صفحة الفنكشن في لوحة Supabase فيه
+  تبويب **Logs** — بيوريك رسالة الخطأ بالظبط.
+
+## أمان مهم
+
+- التوكن بتاع تسجيل الدخول بيتبعت في هيدر `x-app-token` مش كوكيز.
+- جدولي `jobs` و `sessions` عليهم **Row Level Security** مفعّل من غير أي
+  policies عامة — الوصول الوحيد ليهم بيبقى عن طريق الـ Edge Functions.
+- مفتاح `GEMINI_API_KEY` مخزّن كـ Secret على السيرفر، مش ظاهر في أي كود عام
+  على GitHub.
+
+## تنظيف الملفات القديمة (اختياري)
+
+من **Database → Cron Jobs** في لوحة Supabase (واجهة، من غير SQL يدوي لو حابب)،
+تقدر تضيف مهمة تشتغل كل ساعة وتنفذ:
+
+```sql
+delete from jobs where created_at < now() - interval '2 hours';
+delete from sessions where expires_at < now();
+```
+
+## حدود المشروع الحالي
+
+- المعالجة بتعتمد إن المتصفح فاتح وبيعمل "poll" كل شوية — لو قفلت التاب أثناء
+  المعالجة، الوظيفة بتوقف عند آخر صف اتعالج (البيانات محفوظة، ممكن تضيف زرار
+  "كمّل من هنا" بعدين).
+- عمود واحد بس في كل تشغيلة.
+- كلمة سر واحدة مشتركة، مفيش نظام مستخدمين متعددين.
+- خطة Supabase المجانية فيها حدود على عدد الاستدعاءات وحجم قاعدة البيانات —
+  كافية جداً للاستخدام الشخصي.

@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>خط الإنتاج — تعديل ملفات المنتجات بالذكاء الاصطناعي</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Almarai:wght@400;700;800&family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="noise-layer"></div>
+
+<button id="logoutBtn" class="logout-btn" hidden>تسجيل خروج</button>
+
+<header class="hero">
+  <div class="hero-tag">محطة معالجة بيانات المنتجات</div>
+  <h1 class="hero-title">خط الإنتاج</h1>
+  <p class="hero-sub">
+    ارفع ملف الإكسيل بتاع منتجاتك، قول للذكاء الاصطناعي عايزه يعدل ايه، وهو هيمشي على كل صف
+    زي محطة تصنيع — يدخل خام، يخرج جاهز للنشر.
+  </p>
+</header>
+
+<main class="workbench">
+
+  <!-- المرحلة ١: الاستلام -->
+  <section class="station" id="station-upload">
+    <div class="station-head">
+      <span class="station-num">محطة ١</span>
+      <h2>استلام الملف</h2>
+    </div>
+
+    <label class="dropzone" id="dropzone">
+      <input type="file" id="fileInput" accept=".xlsx,.xls" hidden>
+      <div class="dropzone-icon">⇪</div>
+      <div class="dropzone-text">اسحب ملف الإكسيل هنا أو دوس للاختيار</div>
+      <div class="dropzone-hint">.xlsx أو .xls — حتى 5 ميجا وحتى 1000 صف</div>
+    </label>
+
+    <div class="file-chip" id="fileChip" hidden>
+      <span id="fileName"></span>
+      <span id="rowCount" class="chip-badge"></span>
+    </div>
+  </section>
+
+  <!-- المرحلة ٢: الإعدادات -->
+  <section class="station" id="station-config" hidden>
+    <div class="station-head">
+      <span class="station-num">محطة ٢</span>
+      <h2>تعليمات المعالجة</h2>
+    </div>
+
+    <div class="field-row">
+      <div class="field">
+        <label>العمود المصدر (اللي هياخد منه المعلومة)</label>
+        <select id="sourceColumn"></select>
+      </div>
+      <div class="field">
+        <label>العمود الهدف (اللي هيتكتب فيه الناتج)</label>
+        <select id="targetColumn"></select>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>قول للذكاء الاصطناعي عايزه يعمل ايه بالظبط</label>
+      <textarea id="instruction" rows="3" maxlength="1000" placeholder="مثال: اكتب عنوان سيو جذاب للمنتج ده يتضمن كلمات بحث مهمة، بحد أقصى ٦٠ حرف"></textarea>
+    </div>
+
+    <button id="startBtn" class="btn-primary">ابدأ التشغيل</button>
+    <p class="eta-note" id="etaNote"></p>
+  </section>
+
+  <!-- المرحلة ٣: خط الإنتاج -->
+  <section class="station" id="station-belt" hidden>
+    <div class="station-head">
+      <span class="station-num">محطة ٣</span>
+      <h2>جاري التشغيل</h2>
+    </div>
+
+    <div class="belt-wrap">
+      <div class="belt-track">
+        <div class="belt-fill" id="beltFill"></div>
+      </div>
+      <div class="belt-stats">
+        <span id="progressCount">٠ / ٠</span>
+        <span id="progressPct">٪٠</span>
+      </div>
+    </div>
+
+    <div class="belt-status" id="beltStatus">بيتم تجهيز الصفوف واحد واحد… العملية بتاخد وقت عشان نحترم حدود الاستخدام المجاني</div>
+  </section>
+
+  <!-- المرحلة ٤: التسليم -->
+  <section class="station" id="station-done" hidden>
+    <div class="station-head">
+      <span class="station-num">محطة ٤</span>
+      <h2>الملف جاهز</h2>
+    </div>
+    <p class="done-text">تمت معالجة كل الصفوف بنجاح. ملفك جاهز للتحميل.</p>
+    <button id="downloadBtn" class="btn-primary">تحميل الملف النهائي</button>
+  </section>
+
+  <div class="error-box" id="errorBox" hidden></div>
+
+</main>
+
+<footer class="site-footer">
+  يعمل بواسطة Gemini API (الفئة المجانية) — البيانات بتتبعت لجوجل عشان تتعالج، متبعتش بيانات حساسة.
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="config.js"></script>
+<script src="script.js"></script>
+</body>
+</html>
