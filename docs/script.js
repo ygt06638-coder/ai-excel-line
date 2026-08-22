@@ -211,9 +211,9 @@ function addTargetRow() {
 
   const instrInput = document.createElement('textarea');
   instrInput.className = 'target-instruction-input';
-  instrInput.rows = 2;
-  instrInput.maxLength = 1000;
-  instrInput.placeholder = 'قول للذكاء الاصطناعي عايزه يكتب ايه في العمود ده بالظبط';
+  instrInput.rows = 5;
+  instrInput.maxLength = 20000;
+  instrInput.placeholder = 'قول للذكاء الاصطناعي عايزه يكتب ايه في العمود ده بالظبط — تقدر تكتب برومبت مفصّل قد ما تحب';
 
   row.appendChild(head);
   row.appendChild(instrInput);
