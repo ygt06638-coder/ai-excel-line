@@ -35,6 +35,35 @@ let currentSheetName = 'Sheet1';
 let currentHeaders = [];
 const MAX_TARGETS = 6;
 
+// ---------- حفظ رقم الشغلانة في الجهاز عشان لو النت قطع أو الصفحة اتقفلت نقدر نكمل ----------
+const JOB_STORAGE_KEY = 'itqan_current_job';
+
+function saveJobState(stage) {
+  try {
+    localStorage.setItem(
+      JOB_STORAGE_KEY,
+      JSON.stringify({ jobId: currentJobId, stage, rowCount: currentRowCount }),
+    );
+  } catch (e) {
+    // مفيش localStorage؟ متهمش، بس المعالجة مش هتكمل تلقائي لو حصل قطع
+  }
+}
+
+function clearJobState() {
+  try {
+    localStorage.removeItem(JOB_STORAGE_KEY);
+  } catch (e) {}
+}
+
+function loadJobState() {
+  try {
+    const raw = localStorage.getItem(JOB_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
 function getToken() {
   return localStorage.getItem('app_token') || '';
 }
@@ -44,11 +73,19 @@ function authHeaders(extra = {}) {
   return token ? { ...extra, 'x-app-token': token } : extra;
 }
 
+// api() بترجع خطأ فيه isNetworkError=true لو المشكلة اتصال بالنت (مش رد من السيرفر)
 async function api(path, options = {}) {
-  const res = await fetch(`${FN_URL}/${path}`, {
-    ...options,
-    headers: authHeaders({ 'Content-Type': 'application/json', ...(options.headers || {}) }),
-  });
+  let res;
+  try {
+    res = await fetch(`${FN_URL}/${path}`, {
+      ...options,
+      headers: authHeaders({ 'Content-Type': 'application/json', ...(options.headers || {}) }),
+    });
+  } catch (networkErr) {
+    const e = new Error('تعذر الاتصال بالسيرفر، تأكد من اتصال النت');
+    e.isNetworkError = true;
+    throw e;
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || 'حصل خطأ غير متوقع');
   return data;
@@ -76,12 +113,38 @@ function clearError() {
       logoutBtn.hidden = false;
       if (!data.loggedIn) {
         window.location.href = 'login.html';
+        return;
       }
     }
+    // بعد ما نتأكد إن الدخول تمام، نشوف لو فيه شغلانة واقفة نكملها
+    tryResumeJob();
   } catch (err) {
     // تجاهل، مش حرج لعرض الصفحة
+    tryResumeJob();
   }
 })();
+
+// ---------- استكمال شغلانة كانت شغالة قبل ما الصفحة تتقفل أو النت يقطع ----------
+function tryResumeJob() {
+  const saved = loadJobState();
+  if (!saved || !saved.jobId) return;
+
+  currentJobId = saved.jobId;
+  currentRowCount = saved.rowCount || 0;
+
+  if (saved.stage === 'done') {
+    stationDone.hidden = false;
+    stationDone.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return;
+  }
+
+  if (saved.stage === 'processing') {
+    stationBelt.hidden = false;
+    beltStatus.textContent = 'رجعنا نكمل من حيث ما وقفنا…';
+    stationBelt.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    pollStep();
+  }
+}
 
 logoutBtn.addEventListener('click', async () => {
   try {
@@ -110,6 +173,7 @@ fileInput.addEventListener('change', () => {
 // ---------- قراءة الإكسيل في المتصفح (SheetJS) ثم إرساله كـ JSON ----------
 async function handleFile(file) {
   clearError();
+  clearJobState(); // ملف جديد = شغلانة جديدة، امسح أي رقم شغلانة قديم محفوظ
 
   try {
     const buffer = await file.arrayBuffer();
@@ -260,7 +324,7 @@ startBtn.addEventListener('click', async () => {
   }
 
   startBtn.disabled = true;
-  const estSeconds = currentRowCount * 4.2;
+  const estSeconds = currentRowCount * targets.length * 4.2;
   etaNote.textContent = `الوقت المتوقع تقريباً: ${toArabicDigits(Math.ceil(estSeconds / 60))} دقيقة (بسبب حدود الـ API المجاني)`;
 
   try {
@@ -276,6 +340,7 @@ startBtn.addEventListener('click', async () => {
     stationBelt.hidden = false;
     quotaPause.hidden = true;
     stationBelt.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    saveJobState('processing');
     pollStep();
   } catch (err) {
     showError(err.message);
@@ -283,13 +348,18 @@ startBtn.addEventListener('click', async () => {
   }
 });
 
-// ---------- المعالجة صف بصف (كل نداء process-step بيعالج صف واحد) ----------
+// ---------- المعالجة صف بصف (كل نداء process-step بيعالج خطوة واحدة) ----------
+let reconnectAttempts = 0;
+const MAX_AUTO_RETRIES = 5;
+
 async function pollStep() {
   try {
     const data = await api('process-step', {
       method: 'POST',
       body: JSON.stringify({ jobId: currentJobId }),
     });
+
+    reconnectAttempts = 0; // الاتصال رجع تمام، صفّر عداد المحاولات
 
     const pct = data.total ? Math.round((data.processed / data.total) * 100) : 0;
     beltFill.style.width = pct + '%';
@@ -299,13 +369,17 @@ async function pollStep() {
     if (data.paused) {
       beltStatus.textContent = 'الأداة واقفة مؤقتاً بسبب حد استخدام Gemini';
       quotaPauseText.textContent = data.message || 'وصلت لحد الطلبات المسموح بيه دلوقتي.';
+      resumeBtn.textContent = 'استكمل المعالجة';
       quotaPause.hidden = false;
       return; // وقّف الـ polling التلقائي، المستخدم هيكمل بنفسه من الزرار
     }
 
+    quotaPause.hidden = true;
+
     if (data.status === 'error') {
       showError('حصل خطأ أثناء المعالجة: ' + data.error);
       startBtn.disabled = false;
+      clearJobState();
       return;
     }
 
@@ -313,6 +387,7 @@ async function pollStep() {
       beltStatus.textContent = 'تمام، خلصنا كل الصفوف';
       quotaPause.hidden = true;
       stationDone.hidden = false;
+      saveJobState('done');
       stationDone.scrollIntoView({ behavior: 'smooth', block: 'start' });
       return;
     }
@@ -324,6 +399,23 @@ async function pollStep() {
 
     setTimeout(pollStep, data.pollAfterMs || 4300);
   } catch (err) {
+    // النت مقطوع؟ جرّب تاني لوحدك كذا مرة قبل ما تسيب المستخدم يحاول يدوي
+    if (err.isNetworkError && reconnectAttempts < MAX_AUTO_RETRIES) {
+      reconnectAttempts++;
+      const delay = Math.min(30000, 3000 * reconnectAttempts); // 3, 6, 9, 12, 15 ثانية
+      beltStatus.textContent = `الاتصال بالنت انقطع، بنحاول تاني (محاولة ${toArabicDigits(reconnectAttempts)} من ${toArabicDigits(MAX_AUTO_RETRIES)})…`;
+      setTimeout(pollStep, delay);
+      return;
+    }
+
+    if (err.isNetworkError) {
+      beltStatus.textContent = 'مفيش اتصال بالنت دلوقتي';
+      quotaPauseText.textContent = 'اتأكد إن جهازك متصل بالنت، وبعدين دوس على الزرار عشان تكمل.';
+      resumeBtn.textContent = 'حاول تاني';
+      quotaPause.hidden = false;
+      return;
+    }
+
     showError(err.message);
     startBtn.disabled = false;
   }
@@ -331,6 +423,7 @@ async function pollStep() {
 
 resumeBtn.addEventListener('click', () => {
   quotaPause.hidden = true;
+  reconnectAttempts = 0;
   pollStep();
 });
 
