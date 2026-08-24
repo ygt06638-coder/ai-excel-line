@@ -39,7 +39,8 @@ async function checkAuth(req: Request): Promise<boolean> {
   return true;
 }
 
-const MAX_INSTRUCTION_LENGTH = 1000;
+const MAX_INSTRUCTION_LENGTH = 20000; // نفس الحد الموجود في الواجهة (maxlength)
+const MAX_TARGETS = 6;
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -50,29 +51,52 @@ Deno.serve(async (req: Request) => {
 
   try {
     const body = await req.json().catch(() => ({}));
-    const { jobId, sourceColumn, targetColumn, instruction } = body || {};
+    const { jobId, sourceColumns, targets } = body || {};
 
     if (!jobId || typeof jobId !== 'string') {
       return jsonResponse({ error: 'jobId مفقود أو غير صحيح' }, 400);
     }
+
     if (
-      typeof sourceColumn !== 'string' ||
-      typeof targetColumn !== 'string' ||
-      typeof instruction !== 'string'
+      !Array.isArray(sourceColumns) ||
+      sourceColumns.length === 0 ||
+      !sourceColumns.every((c: unknown) => typeof c === 'string' && c.trim())
     ) {
-      return jsonResponse({ error: 'لازم تحدد العمود المصدر، العمود الهدف، والتعليمات' }, 400);
+      return jsonResponse({ error: 'لازم تحدد عمود مصدر واحد على الأقل' }, 400);
     }
 
-    const trimmedInstruction = instruction.trim();
-    if (!sourceColumn.trim() || !targetColumn.trim() || !trimmedInstruction) {
-      return jsonResponse({ error: 'لازم تحدد العمود المصدر، العمود الهدف، والتعليمات' }, 400);
+    if (!Array.isArray(targets) || targets.length === 0) {
+      return jsonResponse({ error: 'لازم تحدد عمود هدف واحد على الأقل' }, 400);
     }
-    if (trimmedInstruction.length > MAX_INSTRUCTION_LENGTH) {
-      return jsonResponse(
-        { error: `التعليمات طويلة جداً (أقصى حد ${MAX_INSTRUCTION_LENGTH} حرف)` },
-        400,
-      );
+    if (targets.length > MAX_TARGETS) {
+      return jsonResponse({ error: `أقصى عدد أعمدة هدف مسموح بيه ${MAX_TARGETS}` }, 400);
     }
+
+    const cleanTargets: { column: string; instruction: string }[] = [];
+    for (const t of targets) {
+      if (!t || typeof t.column !== 'string' || typeof t.instruction !== 'string') {
+        return jsonResponse({ error: 'كل عمود هدف لازم يكون له اسم وتعليمات' }, 400);
+      }
+      const column = t.column.trim();
+      const instruction = t.instruction.trim();
+      if (!column || !instruction) {
+        return jsonResponse({ error: 'كل عمود هدف لازم يكون له اسم وتعليمات' }, 400);
+      }
+      if (instruction.length > MAX_INSTRUCTION_LENGTH) {
+        return jsonResponse(
+          { error: `تعليمات عمود "${column}" طويلة جداً (أقصى حد ${MAX_INSTRUCTION_LENGTH} حرف)` },
+          400,
+        );
+      }
+      cleanTargets.push({ column, instruction });
+    }
+
+    const targetCols = cleanTargets.map((t) => t.column);
+    if (new Set(targetCols).size !== targetCols.length) {
+      return jsonResponse({ error: 'في عمود هدف مكرر أكتر من مرة، خليه اسم مختلف' }, 400);
+    }
+
+    const cleanSourceColumns = sourceColumns.map((c: string) => c.trim());
 
     const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
     if (!GEMINI_API_KEY) {
@@ -82,7 +106,7 @@ Deno.serve(async (req: Request) => {
     const supabase = getAdminClient();
     const { data: job, error: fetchErr } = await supabase
       .from('jobs')
-      .select('id, status, headers')
+      .select('id, status, headers, rows')
       .eq('id', jobId)
       .maybeSingle();
 
@@ -95,29 +119,34 @@ Deno.serve(async (req: Request) => {
     }
 
     const headers: string[] = job.headers || [];
-    if (!headers.includes(sourceColumn)) {
-      return jsonResponse({ error: `العمود المصدر "${sourceColumn}" مش موجود في الملف` }, 400);
+    for (const c of cleanSourceColumns) {
+      if (!headers.includes(c)) {
+        return jsonResponse({ error: `العمود المصدر "${c}" مش موجود في الملف` }, 400);
+      }
     }
-    if (!headers.includes(targetColumn)) {
-      return jsonResponse({ error: `العمود الهدف "${targetColumn}" مش موجود في الملف` }, 400);
-    }
+
+    const rowCount = Array.isArray(job.rows) ? job.rows.length : 0;
+    const total = rowCount * cleanTargets.length;
 
     const { error: updateErr } = await supabase
       .from('jobs')
       .update({
-        source_column: sourceColumn,
-        target_column: targetColumn,
-        instruction: trimmedInstruction,
+        source_columns: cleanSourceColumns,
+        targets: cleanTargets,
         status: 'processing',
         processed: 0,
+        total,
         error: null,
         last_processed_at: null,
+        // شغلانة جديدة تبدأ دايماً بمفتاح السيرفر الافتراضي؛ أي مفتاح بديل
+        // اتحط في شغلانة سابقة (لو حصل) بيتصفّر هنا.
+        api_key_override: null,
       })
       .eq('id', jobId);
 
     if (updateErr) throw updateErr;
 
-    return jsonResponse({ started: true });
+    return jsonResponse({ started: true, total });
   } catch (e) {
     return jsonResponse({ error: 'فشل بدء المعالجة: ' + String(e?.message || e) }, 500);
   }

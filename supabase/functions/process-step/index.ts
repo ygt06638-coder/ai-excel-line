@@ -41,10 +41,10 @@ async function checkAuth(req: Request): Promise<boolean> {
 
 const GEMINI_MODEL = Deno.env.get('GEMINI_MODEL') || 'gemini-2.5-flash-lite';
 const MIN_DELAY_MS = parseInt(Deno.env.get('MIN_DELAY_MS') || '4200', 10);
+const MAX_API_KEY_LENGTH = 200;
 
-async function callGemini(prompt: string): Promise<string> {
-  const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+async function callGemini(prompt: string, apiKey: string): Promise<string> {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -62,11 +62,11 @@ async function callGemini(prompt: string): Promise<string> {
   return text.trim();
 }
 
-async function callGeminiWithRetry(prompt: string, maxRetries = 2): Promise<string> {
+async function callGeminiWithRetry(prompt: string, apiKey: string, maxRetries = 2): Promise<string> {
   let delay = 2000;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      return await callGemini(prompt);
+      return await callGemini(prompt, apiKey);
     } catch (err) {
       const isRateLimit = String(err?.message || err).includes('429');
       if (attempt === maxRetries || !isRateLimit) throw err;
@@ -77,7 +77,11 @@ async function callGeminiWithRetry(prompt: string, maxRetries = 2): Promise<stri
   throw new Error('فشلت كل المحاولات');
 }
 
-function statusResponse(job: any) {
+function isRateLimitError(err: unknown) {
+  return String((err as any)?.message || err).includes('429');
+}
+
+function statusResponse(job: any, extra: Record<string, unknown> = {}) {
   const etaSeconds =
     job.status === 'processing' ? Math.max(0, job.total - job.processed) * (MIN_DELAY_MS / 1000) : 0;
   return jsonResponse({
@@ -87,6 +91,8 @@ function statusResponse(job: any) {
     error: job.error,
     etaSeconds,
     pollAfterMs: MIN_DELAY_MS,
+    usingCustomKey: !!job.api_key_override,
+    ...extra,
   });
 }
 
@@ -99,7 +105,7 @@ Deno.serve(async (req: Request) => {
 
   try {
     const body = await req.json().catch(() => ({}));
-    const { jobId } = body || {};
+    const { jobId, apiKey } = body || {};
     if (!jobId || typeof jobId !== 'string') {
       return jsonResponse({ error: 'jobId مفقود أو غير صحيح' }, 400);
     }
@@ -113,6 +119,19 @@ Deno.serve(async (req: Request) => {
 
     if (fetchErr) throw fetchErr;
     if (!job) return jsonResponse({ error: 'الوظيفة غير موجودة' }, 404);
+
+    // لو المستخدم بعت مفتاح Gemini جديد (مثلاً بعد ما مفتاح السيرفر خلّص
+    // سماحيته)، نحفظه على الوظيفة عشان يُستخدم من الخطوة دي وكل الخطوات
+    // الجاية بدل ما نضطر نوقف المعالجة أو نعيد رفع الملف.
+    if (typeof apiKey === 'string' && apiKey.trim()) {
+      const trimmedKey = apiKey.trim().slice(0, MAX_API_KEY_LENGTH);
+      const { error: keyErr } = await supabase
+        .from('jobs')
+        .update({ api_key_override: trimmedKey })
+        .eq('id', jobId);
+      if (keyErr) throw keyErr;
+      job.api_key_override = trimmedKey;
+    }
 
     // خلصت أو فشلت بالفعل - رجّع الحالة الحالية من غير أي شغل
     if (job.status === 'done' || job.status === 'error') {
@@ -131,34 +150,70 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    const sourceColumns: string[] = job.source_columns || [];
+    const targets: { column: string; instruction: string }[] = job.targets || [];
+    if (sourceColumns.length === 0 || targets.length === 0) {
+      return jsonResponse({ error: 'إعدادات المعالجة ناقصة، ابدأ التشغيل تاني' }, 400);
+    }
+
+    const effectiveApiKey: string = job.api_key_override || Deno.env.get('GEMINI_API_KEY') || '';
+    if (!effectiveApiKey) {
+      return jsonResponse({ error: 'مفيش مفتاح Gemini API متاح، ضيف واحد وحاول تاني' }, 500);
+    }
+
     const rows = job.rows as Record<string, unknown>[];
     const i = job.processed;
 
     if (i >= job.total) {
-      const { error: doneErr } = await supabase
-        .from('jobs')
-        .update({ status: 'done' })
-        .eq('id', jobId);
+      const { error: doneErr } = await supabase.from('jobs').update({ status: 'done' }).eq('id', jobId);
       if (doneErr) throw doneErr;
       job.status = 'done';
       return statusResponse(job);
     }
 
-    const row = rows[i];
-    const sourceValue = row[job.source_column as string] ?? '';
+    const targetsCount = targets.length;
+    const rowIndex = Math.floor(i / targetsCount);
+    const target = targets[i % targetsCount];
+    const row = rows[rowIndex];
+
+    const sourceText = sourceColumns.map((c) => `${c}: ${row[c] ?? ''}`).join('\n');
 
     const prompt = `أنت خبير سيو (SEO) ومحتوى تسويقي.
-التعليمات: ${job.instruction}
+التعليمات: ${target.instruction}
 
-القيمة الأصلية للمنتج (العمود: ${job.source_column}): "${sourceValue}"
+بيانات المنتج الأصلية:
+${sourceText}
 
 اكتب فقط النتيجة النهائية المطلوبة بدون أي شرح أو مقدمات أو علامات اقتباس.`;
 
+    let quotaPaused = false;
     try {
-      const result = await callGeminiWithRetry(prompt);
-      row[job.target_column as string] = result;
+      const result = await callGeminiWithRetry(prompt, effectiveApiKey);
+      row[target.column] = result;
     } catch (err) {
-      row[job.target_column as string] = '⚠️ فشل المعالجة: ' + String(err?.message || err);
+      if (isRateLimitError(err)) {
+        quotaPaused = true;
+      } else {
+        row[target.column] = '⚠️ فشل المعالجة: ' + String((err as any)?.message || err);
+      }
+    }
+
+    // لو وقفنا بسبب حد الاستخدام: منزودش processed، بس نحدّث وقت آخر محاولة
+    // عشان نحترم المهلة، ونرجّع للفرونت إند إشارة واضحة إنه محتاج يستنى ويدوس
+    // استكمل، أو يحط مفتاح Gemini API تاني عشان يكمل فوراً من غير استنى.
+    if (quotaPaused) {
+      const { error: pauseErr } = await supabase
+        .from('jobs')
+        .update({ last_processed_at: new Date().toISOString() })
+        .eq('id', jobId);
+      if (pauseErr) throw pauseErr;
+
+      return statusResponse(job, {
+        paused: true,
+        message: job.api_key_override
+          ? 'المفتاح الحالي وصل لحد الطلبات المجانية المسموح بيها من Gemini. استنى شوية ودوس استكمل، أو حط مفتاح Gemini API تاني عشان تكمل فوراً.'
+          : 'وصلت لحد الطلبات المجانية المسموح بيها من Gemini دلوقتي. استنى شوية ودوس استكمل، أو حط مفتاح Gemini API تاني عشان تكمل فوراً من غير ما تستنى.',
+      });
     }
 
     const processed = i + 1;

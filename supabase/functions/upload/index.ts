@@ -47,7 +47,9 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const MAX_ROWS = parseInt(Deno.env.get('MAX_ROWS') || '1000', 10);
+    // ارفعناها من ١٠٠٠ لـ ٢٠٠٠٠ افتراضياً عشان تسمح بملفات أكبر (زي ٨٠٠٠ منتج).
+    // تقدر تتحكم فيها من Secret اسمه MAX_ROWS لو عايز رقم مختلف.
+    const MAX_ROWS = parseInt(Deno.env.get('MAX_ROWS') || '20000', 10);
 
     const body = await req.json().catch(() => ({}));
     const headers: unknown = body?.headers;
