@@ -22,6 +22,8 @@ const beltStatus = document.getElementById('beltStatus');
 const quotaPause = document.getElementById('quotaPause');
 const quotaPauseText = document.getElementById('quotaPauseText');
 const resumeBtn = document.getElementById('resumeBtn');
+const newApiKeyInput = document.getElementById('newApiKeyInput');
+const useNewKeyBtn = document.getElementById('useNewKeyBtn');
 
 const stationDone = document.getElementById('station-done');
 const downloadBtn = document.getElementById('downloadBtn');
@@ -34,6 +36,11 @@ let currentRowCount = 0;
 let currentSheetName = 'Sheet1';
 let currentHeaders = [];
 const MAX_TARGETS = 6;
+
+// مفتاح Gemini API جديد المستخدم حطه أثناء الوقفة (لو حصلت) — بيتبعت مع
+// نداء process-step الجاي بس، وبعد كده السيرفر بيحفظه على الوظيفة ويستخدمه
+// تلقائي في كل الخطوات اللي بعدها.
+let pendingApiKey = null;
 
 // ---------- حفظ رقم الشغلانة في الجهاز عشان لو النت قطع أو الصفحة اتقفلت نقدر نكمل ----------
 const JOB_STORAGE_KEY = 'itqan_current_job';
@@ -93,6 +100,17 @@ async function api(path, options = {}) {
 
 function toArabicDigits(n) {
   return String(n).replace(/[0-9]/g, d => '٠١٢٣٤٥٦٧٨٩'[d]);
+}
+
+// بيحول عدد الدقايق لنص "س دقيقة" أو "س ساعة و س دقيقة" لو الرقم كبير
+function formatMinutes(totalMinutes) {
+  const mins = Math.ceil(totalMinutes);
+  if (mins < 60) return `${toArabicDigits(mins)} دقيقة`;
+  const hours = Math.floor(mins / 60);
+  const rem = mins % 60;
+  return rem > 0
+    ? `${toArabicDigits(hours)} ساعة و ${toArabicDigits(rem)} دقيقة`
+    : `${toArabicDigits(hours)} ساعة`;
 }
 
 function showError(msg) {
@@ -325,7 +343,7 @@ startBtn.addEventListener('click', async () => {
 
   startBtn.disabled = true;
   const estSeconds = currentRowCount * targets.length * 4.2;
-  etaNote.textContent = `الوقت المتوقع تقريباً: ${toArabicDigits(Math.ceil(estSeconds / 60))} دقيقة (بسبب حدود الـ API المجاني)`;
+  etaNote.textContent = `الوقت المتوقع تقريباً: ${formatMinutes(estSeconds / 60)} (بسبب حدود الـ API المجاني)`;
 
   try {
     await api('start-process', {
@@ -354,9 +372,15 @@ const MAX_AUTO_RETRIES = 5;
 
 async function pollStep() {
   try {
+    const payload = { jobId: currentJobId };
+    if (pendingApiKey) {
+      payload.apiKey = pendingApiKey;
+      pendingApiKey = null; // بيتبعت مرة واحدة، السيرفر بيحفظه على الوظيفة
+    }
+
     const data = await api('process-step', {
       method: 'POST',
-      body: JSON.stringify({ jobId: currentJobId }),
+      body: JSON.stringify(payload),
     });
 
     reconnectAttempts = 0; // الاتصال رجع تمام، صفّر عداد المحاولات
@@ -393,8 +417,7 @@ async function pollStep() {
     }
 
     if (data.etaSeconds) {
-      const mins = Math.ceil(data.etaSeconds / 60);
-      beltStatus.textContent = `متبقي تقريباً ${toArabicDigits(mins)} دقيقة…`;
+      beltStatus.textContent = `متبقي تقريباً ${formatMinutes(data.etaSeconds / 60)}…`;
     }
 
     setTimeout(pollStep, data.pollAfterMs || 4300);
@@ -424,6 +447,21 @@ async function pollStep() {
 resumeBtn.addEventListener('click', () => {
   quotaPause.hidden = true;
   reconnectAttempts = 0;
+  pollStep();
+});
+
+useNewKeyBtn.addEventListener('click', () => {
+  const key = newApiKeyInput.value.trim();
+  if (!key) {
+    showError('الصق مفتاح Gemini API الأول');
+    return;
+  }
+  clearError();
+  pendingApiKey = key;
+  newApiKeyInput.value = '';
+  quotaPause.hidden = true;
+  reconnectAttempts = 0;
+  beltStatus.textContent = 'بنجرب بالمفتاح الجديد…';
   pollStep();
 });
 

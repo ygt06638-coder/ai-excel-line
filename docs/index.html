@@ -83,6 +83,7 @@
 
     <button id="startBtn" class="btn-primary">ابدأ التشغيل</button>
     <p class="eta-note" id="etaNote"></p>
+    <p class="field-hint">الملفات الكبيرة (آلاف الصفوف) بتاخد وقت طويل عشان بنحترم حدود Gemini المجانية — سيب التاب مفتوح لحد ما يخلص، ولو المفتاح وصل لحده تقدر تحط مفتاح تاني من غير ما توقف.</p>
   </section>
 
   <!-- المرحلة ٣: خط المعايرة -->
@@ -110,6 +111,15 @@
     <div class="quota-pause" id="quotaPause" hidden>
       <p class="quota-pause-text" id="quotaPauseText"></p>
       <button id="resumeBtn" class="btn-primary">استكمل المعالجة</button>
+
+      <div class="apikey-swap">
+        <label for="newApiKeyInput" class="apikey-swap-label">أو حط مفتاح Gemini API تاني عشان تكمل فوراً من غير ما تستنى</label>
+        <div class="apikey-swap-row">
+          <input type="text" id="newApiKeyInput" placeholder="الصق مفتاح Gemini API جديد هنا (AIza...)" autocomplete="off" spellcheck="false">
+          <button type="button" id="useNewKeyBtn" class="btn-secondary">استخدم المفتاح ده</button>
+        </div>
+        <p class="field-hint">تقدر تجيب مفتاح مجاني جديد من <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> بحساب Google تاني.</p>
+      </div>
     </div>
   </section>
 

@@ -601,6 +601,42 @@ textarea::placeholder, input::placeholder, .login-form input::placeholder {
   line-height: 1.7;
 }
 
+/* ---------- API key swap (inside quota-pause) ---------- */
+.apikey-swap {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px dashed var(--brass-dim);
+}
+
+.apikey-swap-label {
+  display: block;
+  font-size: 13px;
+  color: var(--text-dim);
+  font-weight: 500;
+  margin-bottom: 9px;
+}
+
+.apikey-swap-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.apikey-swap-row input[type="text"] {
+  flex: 1;
+  min-width: 220px;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 13.5px;
+}
+
+.apikey-swap .field-hint {
+  margin-top: 10px;
+}
+
+.apikey-swap .field-hint a {
+  color: var(--brass-hi);
+}
+
 /* ---------- Done ---------- */
 .done-text {
   color: var(--text-dim);
