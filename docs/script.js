@@ -80,7 +80,9 @@ function authHeaders(extra = {}) {
   return token ? { ...extra, 'x-app-token': token } : extra;
 }
 
-// api() بترجع خطأ فيه isNetworkError=true لو المشكلة اتصال بالنت (مش رد من السيرفر)
+// api() بترجع خطأ فيه isRetryable=true لو المشكلة مؤقتة (قطع نت، أو خطأ
+// سيرفر عابر زي Cloudflare 520/502/503/504) — الحالات دي مش خطأ حقيقي في
+// بياناتك أو إعداداتك، وغالباً بتزول لوحدها لو جربنا تاني بعد لحظات.
 async function api(path, options = {}) {
   let res;
   try {
@@ -90,9 +92,18 @@ async function api(path, options = {}) {
     });
   } catch (networkErr) {
     const e = new Error('تعذر الاتصال بالسيرفر، تأكد من اتصال النت');
-    e.isNetworkError = true;
+    e.isRetryable = true;
     throw e;
   }
+
+  // أخطاء سيرفر/بنية تحتية مؤقتة (زي صفحة Cloudflare 520 اللي بترجع HTML
+  // مش JSON) — نعاملها كقطع اتصال عابر بدل ما نوقف الشغلانة كلها
+  if (res.status >= 500) {
+    const e = new Error(`انقطاع مؤقت في الاتصال بالسيرفر (كود ${res.status})`);
+    e.isRetryable = true;
+    throw e;
+  }
+
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || 'حصل خطأ غير متوقع');
   return data;
@@ -422,18 +433,19 @@ async function pollStep() {
 
     setTimeout(pollStep, data.pollAfterMs || 4300);
   } catch (err) {
-    // النت مقطوع؟ جرّب تاني لوحدك كذا مرة قبل ما تسيب المستخدم يحاول يدوي
-    if (err.isNetworkError && reconnectAttempts < MAX_AUTO_RETRIES) {
+    // مشكلة مؤقتة (قطع نت أو خطأ سيرفر عابر زي Cloudflare 520)؟ جرّب تاني
+    // لوحدك كذا مرة من غير ما توقف الشغلانة أو تحتاج تتدخل يدوي
+    if (err.isRetryable && reconnectAttempts < MAX_AUTO_RETRIES) {
       reconnectAttempts++;
       const delay = Math.min(30000, 3000 * reconnectAttempts); // 3, 6, 9, 12, 15 ثانية
-      beltStatus.textContent = `الاتصال بالنت انقطع، بنحاول تاني (محاولة ${toArabicDigits(reconnectAttempts)} من ${toArabicDigits(MAX_AUTO_RETRIES)})…`;
+      beltStatus.textContent = `انقطاع مؤقت في الاتصال، بنحاول تاني تلقائي (محاولة ${toArabicDigits(reconnectAttempts)} من ${toArabicDigits(MAX_AUTO_RETRIES)})…`;
       setTimeout(pollStep, delay);
       return;
     }
 
-    if (err.isNetworkError) {
-      beltStatus.textContent = 'مفيش اتصال بالنت دلوقتي';
-      quotaPauseText.textContent = 'اتأكد إن جهازك متصل بالنت، وبعدين دوس على الزرار عشان تكمل.';
+    if (err.isRetryable) {
+      beltStatus.textContent = 'فيه مشكلة مستمرة في الاتصال';
+      quotaPauseText.textContent = 'جربنا كذا مرة تلقائي ومكملناش. اتأكد من اتصال النت، وبعدين دوس على الزرار عشان تكمل.';
       resumeBtn.textContent = 'حاول تاني';
       quotaPause.hidden = false;
       return;
