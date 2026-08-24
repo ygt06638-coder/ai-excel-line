@@ -73,12 +73,17 @@ Deno.serve(async (req: Request) => {
     }
 
     const supabase = getAdminClient();
-    const { data, error } = await supabase
+
+    // بدل ما نبعت كل الصفوف (ممكن تكون آلاف) في استعلام إدراج واحد ضخم —
+    // اللي بياخد وقت طويل وممكن يوصل لحد "statement timeout" في قاعدة
+    // البيانات — بننشئ الوظيفة الأول بصفوف فاضية (سريع)، وبعدين بنضيف
+    // الصفوف على دفعات صغيرة.
+    const { data: created, error: createErr } = await supabase
       .from('jobs')
       .insert({
         status: 'uploaded',
         headers,
-        rows,
+        rows: [],
         total: rows.length,
         processed: 0,
         sheet_name: sheetName,
@@ -86,10 +91,27 @@ Deno.serve(async (req: Request) => {
       .select('id')
       .single();
 
-    if (error) throw error;
+    if (createErr) throw createErr;
+    const jobId = created.id;
+
+    const CHUNK_SIZE = 500;
+    try {
+      for (let start = 0; start < rows.length; start += CHUNK_SIZE) {
+        const chunk = rows.slice(start, start + CHUNK_SIZE);
+        const { error: chunkErr } = await supabase.rpc('append_job_rows', {
+          p_job_id: jobId,
+          p_chunk: chunk,
+        });
+        if (chunkErr) throw chunkErr;
+      }
+    } catch (chunkErr) {
+      // لو حصل عطل في نص الرفع، نمسح الوظيفة الناقصة عشان متفضلش عالقة
+      await supabase.from('jobs').delete().eq('id', jobId);
+      throw chunkErr;
+    }
 
     return jsonResponse({
-      jobId: data.id,
+      jobId,
       headers,
       rowCount: rows.length,
       preview: rows.slice(0, 5),

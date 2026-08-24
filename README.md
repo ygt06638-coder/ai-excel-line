@@ -17,7 +17,8 @@ project-root/
     ├── migrations/
     │   ├── 0001_init.sql
     │   ├── 0002_multi_target_and_resume.sql
-    │   └── 0003_api_key_override.sql   ← الثلاثة تتلزقوا بالترتيب في SQL Editor
+    │   ├── 0003_api_key_override.sql
+    │   └── 0004_append_job_rows.sql        ← الأربعة تتلزقوا بالترتيب في SQL Editor
     └── functions/
         ├── login/index.ts
         ├── logout/index.ts
@@ -47,10 +48,9 @@ project-root/
 2. افتح ملف `supabase/migrations/0001_init.sql` من المشروع اللي بعتهولك (بأي
    محرر نصوص أو حتى بمفكرة عادية)، وانسخ كل محتواه.
 3. الصق الكود في الـ SQL Editor ودوس **Run**.
-4. كرر نفس الخطوتين (نسخ ولصق وRun) لملف `0002_multi_target_and_resume.sql`،
-   وبعده لملف `0003_api_key_override.sql` — **بنفس الترتيب**.
-5. هيتعمل جدولين: `jobs` و `sessions` — تقدر تتأكد منهم من **Table Editor**،
-   وعمود `api_key_override` هيبقى مضاف على جدول `jobs`.
+4. كرر نفس الخطوتين (نسخ ولصق وRun) للملفات `0002_multi_target_and_resume.sql`،
+   `0003_api_key_override.sql`، ثم `0004_append_job_rows.sql` — **بنفس الترتيب**.
+5. هيتعمل جدولين: `jobs` و `sessions` — تقدر تتأكد منهم من **Table Editor**.
 
 ## 3) حط المفاتيح السرية (Secrets)
 
@@ -151,6 +151,15 @@ project-root/
   توقف الشغلانة، وهتفضل مستخدمة نفس المفتاح لحد ما تخلص أو لحد ما تحط
   واحد تاني. كل شغلانة جديدة (ملف جديد أو ابدأ التشغيل تاني) بترجع تستخدم
   مفتاح السيرفر الأساسي.
+
+- **"فشل إنشاء الوظيفة: canceling statement due to statement timeout"**: قاعدة
+  البيانات قطعت الاستعلام لأنه قعد وقت طويل — عادة بيحصل مع ملفات كبيرة جداً.
+  الكود الحالي بيقسّم رفع الصفوف لدفعات صغيرة عشان يتجنب المشكلة دي، لكن لو
+  لسه بتظهرلك، شغّل الأمر ده في **SQL Editor** مرة واحدة:
+  ```sql
+  alter role service_role set statement_timeout = '120s';
+  NOTIFY pgrst, 'reload config';
+  ```
 
 ## لو حصل خطأ
 
